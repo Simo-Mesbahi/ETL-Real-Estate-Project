@@ -1,0 +1,114 @@
+version: "3.8"
+
+services:
+  # Base de données pour les données valides
+  mysql-data-real_estate:
+    image: mysql:8.0
+    container_name: mysql_data-real_estate
+    environment:
+      MYSQL_ROOT_PASSWORD: root
+      MYSQL_DATABASE: real_estate_data
+      MYSQL_USER: airflow
+      MYSQL_PASSWORD: airflow
+    ports:
+      - "3306:3306"
+    volumes:
+      - mysql_data:/var/lib/mysql
+    networks:
+      - etl_network
+
+  # Base de données pour les anomalies
+  mysql-anomalies-real_estate:
+    image: mysql:8.0
+    container_name: mysql_anomalies-real_estate
+    environment:
+      MYSQL_ROOT_PASSWORD: root
+      MYSQL_DATABASE: anomaly_data
+      MYSQL_USER: airflow
+      MYSQL_PASSWORD: airflow
+    ports:
+      - "3307:3306"
+    volumes:
+      - mysql_anomalies_data:/var/lib/mysql
+    networks:
+      - etl_network
+
+  # Airflow Webserver
+  airflow-webserver-real_estate:
+    image: apache/airflow:2.5.0
+    container_name: airflow_webserver-real_estate
+    environment:
+      AIRFLOW__CORE__EXECUTOR: "LocalExecutor"
+      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: "sqlite:////airflow/airflow.db"
+    depends_on:
+      - mysql-data-real_estate
+      - mysql-anomalies-real_estate
+    volumes:
+      - ./dags:/opt/airflow/dags
+      - ./logs:/opt/airflow/logs
+      - ./plugins:/opt/airflow/plugins
+    ports:
+      - "8080:8080"
+    networks:
+      - etl_network
+    command: ["webserver"]
+
+  # Airflow Scheduler
+  airflow-scheduler:
+    image: apache/airflow:2.5.0
+    container_name: airflow_scheduler-real_estate
+    environment:
+      AIRFLOW__CORE__EXECUTOR: "LocalExecutor"
+      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: "sqlite:////airflow/airflow.db"
+    depends_on:
+      - airflow-webserver-real_estate
+    volumes:
+      - ./dags:/opt/airflow/dags
+      - ./logs:/opt/airflow/logs
+      - ./plugins:/opt/airflow/plugins
+    networks:
+      - etl_network
+    command: ["scheduler"]
+
+  # Airflow Init
+  airflow-init-real_estate:
+    image: apache/airflow:2.5.0
+    container_name: airflow_init-real_estate
+    environment:
+      AIRFLOW__CORE__EXECUTOR: "LocalExecutor"
+      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: "sqlite:////airflow/airflow.db"
+    volumes:
+      - ./dags:/opt/airflow/dags
+      - ./logs:/opt/airflow/logs
+      - ./plugins:/opt/airflow/plugins
+    entrypoint: ["airflow", "db", "init"]
+    networks:
+      - etl_network
+
+  # Streamlit pour la visualisation
+  streamlit-real_estate:
+    image: python:3.9-slim
+    container_name: streamlit-real_estate
+    working_dir: /app
+    depends_on:
+      - mysql-data-real_estate
+      - mysql-anomalies-real_estate
+    volumes:
+      - ./visualizations:/app
+    ports:
+      - "8501:8501"
+    command: >
+      sh -c "
+      pip install -r requirements.txt &&
+      streamlit run streamlit_app.py
+      "
+    networks:
+      - etl_network
+
+volumes:
+  mysql_data:
+  mysql_anomalies_data:
+
+networks:
+  etl_network:
+    driver: bridge
